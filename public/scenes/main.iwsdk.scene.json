@@ -1,0 +1,1056 @@
+{
+  "version": "iwsdk.scene.v1",
+  "units": "meters",
+  "components": {
+    "com.iwsdk.components.DomeGradient": {
+      "sky": [
+        0.15,
+        0.17,
+        0.22,
+        1
+      ],
+      "equator": [
+        0.1,
+        0.12,
+        0.16,
+        1
+      ],
+      "ground": [
+        0.06,
+        0.07,
+        0.09,
+        1
+      ],
+      "elevationDeg": 40,
+      "azimuthDeg": -40,
+      "dither": true
+    },
+    "com.iwsdk.components.IBLGradient": {
+      "sky": [
+        0.45,
+        0.5,
+        0.6,
+        1
+      ],
+      "equator": [
+        0.28,
+        0.32,
+        0.38,
+        1
+      ],
+      "ground": [
+        0.16,
+        0.17,
+        0.22,
+        1
+      ],
+      "intensity": 0.4
+    }
+  },
+  "environment": {
+    "toneMapping": "aces",
+    "exposure": 1.15,
+    "shadows": true,
+    "shadowMapType": "pcf"
+  },
+  "resources": {},
+  "nodes": [
+    {
+      "id": "chess-board",
+      "name": "Floating Chess Board",
+      "framingRole": "hero",
+      "content": {
+        "type": "asset",
+        "asset": "chess-board",
+        "castShadow": true,
+        "receiveShadow": true
+      },
+      "transform": {
+        "position": [
+          0,
+          0.85,
+          -0.8
+        ]
+      },
+      "components": {
+        "ChessBoard": {
+          "turn": "white",
+          "status": "in_progress",
+          "selectedSquare": ""
+        }
+      }
+    },
+    {
+      "id": "chess-panel",
+      "name": "Chess Panel",
+      "content": {
+        "type": "asset",
+        "asset": "chess-panel"
+      },
+      "transform": {
+        "position": [
+          0,
+          1.32,
+          -1.25
+        ],
+        "rotationDeg": [
+          -15,
+          0,
+          0
+        ],
+        "scale": 0.5
+      },
+      "components": {
+        "RayInteractable": {}
+      }
+    },
+    {
+      "id": "key-light",
+      "name": "Key Light",
+      "transform": {
+        "position": [
+          0.8,
+          2.6,
+          0.2
+        ],
+        "rotationDeg": [
+          -60,
+          25,
+          0
+        ]
+      },
+      "components": {
+        "DirectionalLight": {
+          "color": [
+            1,
+            0.98,
+            0.92,
+            1
+          ],
+          "intensity": 2.4,
+          "castShadow": true,
+          "shadowMapSize": "2048",
+          "shadowCameraSize": 2,
+          "shadowBias": -0.0003
+        }
+      }
+    },
+    {
+      "id": "fill-light",
+      "name": "Fill Light",
+      "components": {
+        "HemisphereLight": {
+          "skyColor": [
+            0.85,
+            0.92,
+            1,
+            1
+          ],
+          "groundColor": [
+            0.25,
+            0.28,
+            0.35,
+            1
+          ],
+          "intensity": 1.1
+        }
+      }
+    },
+    {
+      "id": "w-rook-1",
+      "name": "White Rook (A1)",
+      "content": {
+        "type": "asset",
+        "asset": "rook-white",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          -0.28,
+          0.892,
+          -0.52
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "w-rook-1",
+          "type": "rook",
+          "color": "white",
+          "square": "a1",
+          "originalSquare": "a1",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "w-knight-2",
+      "name": "White Knight (B1)",
+      "content": {
+        "type": "asset",
+        "asset": "knight-white",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          -0.2,
+          0.892,
+          -0.52
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "w-knight-2",
+          "type": "knight",
+          "color": "white",
+          "square": "b1",
+          "originalSquare": "b1",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "w-bishop-3",
+      "name": "White Bishop (C1)",
+      "content": {
+        "type": "asset",
+        "asset": "bishop-white",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          -0.12,
+          0.892,
+          -0.52
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "w-bishop-3",
+          "type": "bishop",
+          "color": "white",
+          "square": "c1",
+          "originalSquare": "c1",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "w-queen-4",
+      "name": "White Queen (D1)",
+      "content": {
+        "type": "asset",
+        "asset": "queen-white",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          -0.04,
+          0.892,
+          -0.52
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "w-queen-4",
+          "type": "queen",
+          "color": "white",
+          "square": "d1",
+          "originalSquare": "d1",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "w-king-5",
+      "name": "White King (E1)",
+      "content": {
+        "type": "asset",
+        "asset": "king-white",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          0.04,
+          0.892,
+          -0.52
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "w-king-5",
+          "type": "king",
+          "color": "white",
+          "square": "e1",
+          "originalSquare": "e1",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "w-bishop-6",
+      "name": "White Bishop (F1)",
+      "content": {
+        "type": "asset",
+        "asset": "bishop-white",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          0.12,
+          0.892,
+          -0.52
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "w-bishop-6",
+          "type": "bishop",
+          "color": "white",
+          "square": "f1",
+          "originalSquare": "f1",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "w-knight-7",
+      "name": "White Knight (G1)",
+      "content": {
+        "type": "asset",
+        "asset": "knight-white",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          0.2,
+          0.892,
+          -0.52
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "w-knight-7",
+          "type": "knight",
+          "color": "white",
+          "square": "g1",
+          "originalSquare": "g1",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "w-rook-8",
+      "name": "White Rook (H1)",
+      "content": {
+        "type": "asset",
+        "asset": "rook-white",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          0.28,
+          0.892,
+          -0.52
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "w-rook-8",
+          "type": "rook",
+          "color": "white",
+          "square": "h1",
+          "originalSquare": "h1",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "w-pawn-1",
+      "name": "White Pawn (A2)",
+      "content": {
+        "type": "asset",
+        "asset": "pawn-white",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          -0.28,
+          0.892,
+          -0.6
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "w-pawn-1",
+          "type": "pawn",
+          "color": "white",
+          "square": "a2",
+          "originalSquare": "a2",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "w-pawn-2",
+      "name": "White Pawn (B2)",
+      "content": {
+        "type": "asset",
+        "asset": "pawn-white",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          -0.2,
+          0.892,
+          -0.6
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "w-pawn-2",
+          "type": "pawn",
+          "color": "white",
+          "square": "b2",
+          "originalSquare": "b2",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "w-pawn-3",
+      "name": "White Pawn (C2)",
+      "content": {
+        "type": "asset",
+        "asset": "pawn-white",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          -0.12,
+          0.892,
+          -0.6
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "w-pawn-3",
+          "type": "pawn",
+          "color": "white",
+          "square": "c2",
+          "originalSquare": "c2",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "w-pawn-4",
+      "name": "White Pawn (D2)",
+      "content": {
+        "type": "asset",
+        "asset": "pawn-white",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          -0.04,
+          0.892,
+          -0.6
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "w-pawn-4",
+          "type": "pawn",
+          "color": "white",
+          "square": "d2",
+          "originalSquare": "d2",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "w-pawn-5",
+      "name": "White Pawn (E2)",
+      "content": {
+        "type": "asset",
+        "asset": "pawn-white",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          0.04,
+          0.892,
+          -0.6
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "w-pawn-5",
+          "type": "pawn",
+          "color": "white",
+          "square": "e2",
+          "originalSquare": "e2",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "w-pawn-6",
+      "name": "White Pawn (F2)",
+      "content": {
+        "type": "asset",
+        "asset": "pawn-white",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          0.12,
+          0.892,
+          -0.6
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "w-pawn-6",
+          "type": "pawn",
+          "color": "white",
+          "square": "f2",
+          "originalSquare": "f2",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "w-pawn-7",
+      "name": "White Pawn (G2)",
+      "content": {
+        "type": "asset",
+        "asset": "pawn-white",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          0.2,
+          0.892,
+          -0.6
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "w-pawn-7",
+          "type": "pawn",
+          "color": "white",
+          "square": "g2",
+          "originalSquare": "g2",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "w-pawn-8",
+      "name": "White Pawn (H2)",
+      "content": {
+        "type": "asset",
+        "asset": "pawn-white",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          0.28,
+          0.892,
+          -0.6
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "w-pawn-8",
+          "type": "pawn",
+          "color": "white",
+          "square": "h2",
+          "originalSquare": "h2",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "b-pawn-1",
+      "name": "Black Pawn (A7)",
+      "content": {
+        "type": "asset",
+        "asset": "pawn-black",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          -0.28,
+          0.892,
+          -1
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "b-pawn-1",
+          "type": "pawn",
+          "color": "black",
+          "square": "a7",
+          "originalSquare": "a7",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "b-pawn-2",
+      "name": "Black Pawn (B7)",
+      "content": {
+        "type": "asset",
+        "asset": "pawn-black",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          -0.2,
+          0.892,
+          -1
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "b-pawn-2",
+          "type": "pawn",
+          "color": "black",
+          "square": "b7",
+          "originalSquare": "b7",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "b-pawn-3",
+      "name": "Black Pawn (C7)",
+      "content": {
+        "type": "asset",
+        "asset": "pawn-black",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          -0.12,
+          0.892,
+          -1
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "b-pawn-3",
+          "type": "pawn",
+          "color": "black",
+          "square": "c7",
+          "originalSquare": "c7",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "b-pawn-4",
+      "name": "Black Pawn (D7)",
+      "content": {
+        "type": "asset",
+        "asset": "pawn-black",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          -0.04,
+          0.892,
+          -1
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "b-pawn-4",
+          "type": "pawn",
+          "color": "black",
+          "square": "d7",
+          "originalSquare": "d7",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "b-pawn-5",
+      "name": "Black Pawn (E7)",
+      "content": {
+        "type": "asset",
+        "asset": "pawn-black",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          0.04,
+          0.892,
+          -1
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "b-pawn-5",
+          "type": "pawn",
+          "color": "black",
+          "square": "e7",
+          "originalSquare": "e7",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "b-pawn-6",
+      "name": "Black Pawn (F7)",
+      "content": {
+        "type": "asset",
+        "asset": "pawn-black",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          0.12,
+          0.892,
+          -1
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "b-pawn-6",
+          "type": "pawn",
+          "color": "black",
+          "square": "f7",
+          "originalSquare": "f7",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "b-pawn-7",
+      "name": "Black Pawn (G7)",
+      "content": {
+        "type": "asset",
+        "asset": "pawn-black",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          0.2,
+          0.892,
+          -1
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "b-pawn-7",
+          "type": "pawn",
+          "color": "black",
+          "square": "g7",
+          "originalSquare": "g7",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "b-pawn-8",
+      "name": "Black Pawn (H7)",
+      "content": {
+        "type": "asset",
+        "asset": "pawn-black",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          0.28,
+          0.892,
+          -1
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "b-pawn-8",
+          "type": "pawn",
+          "color": "black",
+          "square": "h7",
+          "originalSquare": "h7",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "b-rook-1",
+      "name": "Black Rook (A8)",
+      "content": {
+        "type": "asset",
+        "asset": "rook-black",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          -0.28,
+          0.892,
+          -1.08
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "b-rook-1",
+          "type": "rook",
+          "color": "black",
+          "square": "a8",
+          "originalSquare": "a8",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "b-knight-2",
+      "name": "Black Knight (B8)",
+      "content": {
+        "type": "asset",
+        "asset": "knight-black",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          -0.2,
+          0.892,
+          -1.08
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "b-knight-2",
+          "type": "knight",
+          "color": "black",
+          "square": "b8",
+          "originalSquare": "b8",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "b-bishop-3",
+      "name": "Black Bishop (C8)",
+      "content": {
+        "type": "asset",
+        "asset": "bishop-black",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          -0.12,
+          0.892,
+          -1.08
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "b-bishop-3",
+          "type": "bishop",
+          "color": "black",
+          "square": "c8",
+          "originalSquare": "c8",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "b-queen-4",
+      "name": "Black Queen (D8)",
+      "content": {
+        "type": "asset",
+        "asset": "queen-black",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          -0.04,
+          0.892,
+          -1.08
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "b-queen-4",
+          "type": "queen",
+          "color": "black",
+          "square": "d8",
+          "originalSquare": "d8",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "b-king-5",
+      "name": "Black King (E8)",
+      "content": {
+        "type": "asset",
+        "asset": "king-black",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          0.04,
+          0.892,
+          -1.08
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "b-king-5",
+          "type": "king",
+          "color": "black",
+          "square": "e8",
+          "originalSquare": "e8",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "b-bishop-6",
+      "name": "Black Bishop (F8)",
+      "content": {
+        "type": "asset",
+        "asset": "bishop-black",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          0.12,
+          0.892,
+          -1.08
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "b-bishop-6",
+          "type": "bishop",
+          "color": "black",
+          "square": "f8",
+          "originalSquare": "f8",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "b-knight-7",
+      "name": "Black Knight (G8)",
+      "content": {
+        "type": "asset",
+        "asset": "knight-black",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          0.2,
+          0.892,
+          -1.08
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "b-knight-7",
+          "type": "knight",
+          "color": "black",
+          "square": "g8",
+          "originalSquare": "g8",
+          "isCaptured": false
+        }
+      }
+    },
+    {
+      "id": "b-rook-8",
+      "name": "Black Rook (H8)",
+      "content": {
+        "type": "asset",
+        "asset": "rook-black",
+        "castShadow": true
+      },
+      "transform": {
+        "position": [
+          0.28,
+          0.892,
+          -1.08
+        ]
+      },
+      "components": {
+        "OneHandGrabbable": {},
+        "RayInteractable": {},
+        "ChessPiece": {
+          "pieceId": "b-rook-8",
+          "type": "rook",
+          "color": "black",
+          "square": "h8",
+          "originalSquare": "h8",
+          "isCaptured": false
+        }
+      }
+    }
+  ]
+}

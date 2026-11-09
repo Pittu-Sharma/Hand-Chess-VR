@@ -1,0 +1,77 @@
+<!--
+  Hand Chess VR - Seated Spatial Control Panel
+-->
+<style>
+  .panel-root {
+    flex-direction: column;
+    width: 380px;
+    border-radius: 16px;
+    padding: 18px;
+    gap: 12px;
+  }
+
+  .eyebrow {
+    color: #4ade80;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+  }
+
+  .heading {
+    color: #f8fafc;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 32px;
+  }
+
+  .status-badge {
+    border-radius: 8px;
+    padding: 12px;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .status-title {
+    color: #f1f5f9;
+    font-size: 17px;
+    font-weight: 600;
+  }
+
+  .status-hint {
+    color: #94a3b8;
+    font-size: 13px;
+    line-height: 18px;
+  }
+
+  .buttons-row {
+    flex-direction: row;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .btn {
+    flex-grow: 1;
+    justify-content: center;
+    border-radius: 10px;
+    padding: 12px;
+  }
+
+  .btn-label {
+    font-size: 15px;
+    font-weight: 600;
+    color: #ffffff;
+  }
+</style>
+<Panel class="panel-root">
+  <div class="eyebrow">META QUEST - HAND TRACKING</div>
+  <div class="heading">Hand Chess VR</div>
+  <div class="status-badge">
+    <div id="turn-text" class="status-title">White to move</div>
+    <div id="hint-text" class="status-hint">Pinch piece with thumb &amp; index finger to lift</div>
+  </div>
+  <div class="buttons-row">
+    <Button id="btn-reset" class="btn">
+      <ButtonLabel class="btn-label">New Game</ButtonLabel>
+    </Button>
+  </div>
+</Panel>

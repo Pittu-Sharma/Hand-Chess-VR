@@ -70,6 +70,9 @@
     <div id="hint-text" class="status-hint">Pinch piece with thumb &amp; index finger to lift</div>
   </div>
   <div class="buttons-row">
+    <Button id="btn-difficulty" class="btn">
+      <ButtonLabel id="difficulty-label" class="btn-label">AI: Easy</ButtonLabel>
+    </Button>
     <Button id="btn-reset" class="btn">
       <ButtonLabel class="btn-label">New Game</ButtonLabel>
     </Button>

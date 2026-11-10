@@ -20,6 +20,7 @@
     "@pmndrs/uikit-horizon": "^1.0.74",
     "@pmndrs/uikit-lucide": "^1.0.74",
     "chess.js": "^1.4.0",
+    "stockfish": "^19.0.1",
     "three": "npm:super-three@0.185.0"
   },
   "devDependencies": {

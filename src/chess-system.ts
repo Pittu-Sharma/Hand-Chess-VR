@@ -1,17 +1,18 @@
 /**
  * Chess System for Hand Chess VR.
  *
- * Uses chess.js for authoritative rule enforcement:
- *   - Only legal moves are accepted; illegal drops snap the piece back.
- *   - Turns, captures (piece relocated to tray), check, checkmate, and all
- *     draw conditions (stalemate, insufficient material, 50-move rule,
- *     threefold repetition) are all handled by chess.js.
+ * Uses chess.js for authoritative rule enforcement and Stockfish 19
+ * (running in a background Web Worker) as the Black opponent.
  *
- * Pinch smoothing: GrabSystem runs first each frame and sets the raw grab
- * position. ChessSystem then lerps the mesh toward the grip-space world
- * position with exponential smoothing (alpha 0.18) so hand tremor is damped.
- * All Vector3 temporaries are pre-allocated in init() — no heap allocation
- * in update().
+ * Features:
+ *   - Human plays White with hands-only tracking & pinch grab.
+ *   - Stockfish AI plays Black with Easy / Medium skill level.
+ *   - Automatic AI replies: after White completes a move, Stockfish computes
+ *     its move and the black piece animates in an arc to the target square.
+ *   - Legal moves only: illegal moves snap back to original square.
+ *   - Full rule handling: captures, castling, en passant, promotion, check,
+ *     checkmate, and draws.
+ *   - Zero heap allocation in update(): pre-allocated Vector3 scratch objects.
  */
 
 import { Chess } from 'chess.js';
@@ -36,6 +37,8 @@ import {
 } from './board.js';
 import { ChessBoard, ChessPiece, ChessTile } from './components.js';
 import { chessAudio } from './sound.js';
+import { StockfishService } from './stockfish-service.js';
+import type { Difficulty, StockfishMove } from './stockfish-service.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -54,6 +57,9 @@ const HOVER_RADIUS = 0.085;
 const HOVER_EMISSIVE_WHITE = 0xffaa44;
 const HOVER_EMISSIVE_BLACK = 0x44ddff;
 const HOVER_INTENSITY = 0.35;
+
+/** AI piece travel animation duration in seconds. */
+const AI_ANIM_DURATION = 0.65;
 
 // ---------------------------------------------------------------------------
 // Helpers (pure functions, called at event-time not in the hot update loop)
@@ -97,23 +103,35 @@ export class ChessSystem extends createSystem({
   // chess.js instance — single source of truth for all board state.
   private chess = new Chess();
 
+  // Stockfish 19 AI engine in Web Worker
+  private stockfish = new StockfishService('easy');
+
   // Visual state
   private activeIndicators: Mesh[] = [];
 
   // Legal destination squares for the piece currently being dragged.
-  // Set on grab, cleared on release.
   private currentLegalSquares: string[] = [];
 
-  // Capture-tray counters (how many pieces are already in each tray).
+  // Capture-tray counters
   private capturedWhiteCount = 0;
   private capturedBlackCount = 0;
 
-  // UIKitML element references (populated in init).
+  // UIKitML element references
   private statusEl: any = null;
   private hintEl: any = null;
+  private diffLabelEl: any = null;
 
-  // Game-over flag: once true, all grabs are ignored until resetGame().
+  // Game state flags
   private gameOver = false;
+  private isAiThinking = false;
+  private isAiAnimating = false;
+
+  // AI piece movement animation state
+  private aiAnimEntity: Entity | null = null;
+  private aiAnimFromSq = '';
+  private aiAnimToSq = '';
+  private aiAnimPromotion?: string;
+  private aiAnimElapsed = 0;
 
   // ----- Pre-allocated temporaries (never re-created in update) -----
   private readonly _gripWorldPos  = new Vector3();
@@ -121,6 +139,8 @@ export class ChessSystem extends createSystem({
   private readonly _pieceWorldPos = new Vector3();
   private readonly _tipLeft       = new Vector3();
   private readonly _tipRight      = new Vector3();
+  private readonly _aiStartPos    = new Vector3();
+  private readonly _aiEndPos      = new Vector3();
 
   private grabSystem: GrabSystem | null = null;
   private _hoveredEntity: Entity | null = null;
@@ -148,14 +168,24 @@ export class ChessSystem extends createSystem({
     if (panel) {
       this.statusEl = panel.getElementById('turn-text');
       this.hintEl   = panel.getElementById('hint-text');
+      this.diffLabelEl = panel.getElementById('difficulty-label');
+
       const resetBtn = panel.getElementById('btn-reset');
       if (resetBtn) {
-        const cb = () => this.resetGame();
-        resetBtn.addEventListener('click', cb);
-        this.cleanupFuncs.push(() => resetBtn.removeEventListener('click', cb));
+        const onReset = () => this.resetGame();
+        resetBtn.addEventListener('click', onReset);
+        this.cleanupFuncs.push(() => resetBtn.removeEventListener('click', onReset));
+      }
+
+      const diffBtn = panel.getElementById('btn-difficulty');
+      if (diffBtn) {
+        const onToggleDiff = () => this.toggleDifficulty();
+        diffBtn.addEventListener('click', onToggleDiff);
+        this.cleanupFuncs.push(() => diffBtn.removeEventListener('click', onToggleDiff));
       }
     }
 
+    this.cleanupFuncs.push(() => this.stockfish.terminate());
     this.refreshStatusUI();
   }
 
@@ -163,9 +193,10 @@ export class ChessSystem extends createSystem({
   // update — runs every frame, 72–90 fps.  NO allocation allowed here.
   // -------------------------------------------------------------------------
 
-  update(_delta: number, _time: number): void {
+  update(delta: number, _time: number): void {
     this.updateSmoothing();
     this.updateHoverGlow();
+    this.updateAiAnimation(delta);
   }
 
   /** Lerp held-piece positions toward the hand grip (pinch smoothing). */
@@ -186,12 +217,20 @@ export class ChessSystem extends createSystem({
     }
   }
 
-  /** Hover glow — highlights the piece whose center is closest to either
-   * index-tip space and within HOVER_RADIUS.  Only one piece glows at a time;
-   * the previous one is cleared before the new one is lit.
+  /**
+   * Hover glow — highlights the piece whose center is closest to either
+   * index-tip space and within HOVER_RADIUS. Only White pieces glow for the human.
    */
   private updateHoverGlow(): void {
-    // Don't show hover on a piece that is already being held.
+    if (this.isAiThinking || this.isAiAnimating || this.gameOver) {
+      if (this._hoveredEntity) {
+        const prevMesh = this._hoveredEntity.object3D;
+        if (prevMesh) setHoverGlow(prevMesh, false, 0);
+        this._hoveredEntity = null;
+      }
+      return;
+    }
+
     const heldSet = this.queries.held.entities;
 
     this.player.indexTipSpaces.left.getWorldPosition(this._tipLeft);
@@ -203,6 +242,10 @@ export class ChessSystem extends createSystem({
     for (const entity of this.queries.pieces.entities) {
       if (heldSet.has(entity)) continue;
       if (entity.getValue(ChessPiece, 'isCaptured')) continue;
+
+      // Only White pieces belong to the human player
+      const color = entity.getValue(ChessPiece, 'color');
+      if (color !== 'white') continue;
 
       const mesh = entity.object3D;
       if (!mesh) continue;
@@ -219,29 +262,61 @@ export class ChessSystem extends createSystem({
     }
 
     if (closest !== this._hoveredEntity) {
-      // Clear old glow.
       if (this._hoveredEntity) {
         const prevMesh = this._hoveredEntity.object3D;
         if (prevMesh) setHoverGlow(prevMesh, false, 0);
       }
-      // Apply new glow.
       if (closest) {
-        const color = closest.getValue(ChessPiece, 'color') || 'white';
-        const emissive = color === 'white' ? HOVER_EMISSIVE_WHITE : HOVER_EMISSIVE_BLACK;
         const mesh = closest.object3D;
-        if (mesh) setHoverGlow(mesh, true, emissive);
+        if (mesh) setHoverGlow(mesh, true, HOVER_EMISSIVE_WHITE);
       }
       this._hoveredEntity = closest;
     }
   }
 
+  /**
+   * Smoothly animates the AI piece along a parabolic 3D arc to its destination square.
+   */
+  private updateAiAnimation(delta: number): void {
+    if (!this.isAiAnimating || !this.aiAnimEntity) return;
+
+    const mesh = this.aiAnimEntity.object3D;
+    if (!mesh) {
+      this.isAiAnimating = false;
+      return;
+    }
+
+    this.aiAnimElapsed += delta;
+    const t = Math.min(1.0, this.aiAnimElapsed / AI_ANIM_DURATION);
+
+    // Smooth cubic ease in/out
+    const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+    // Horizontal interpolation
+    mesh.position.x = this._aiStartPos.x + (this._aiEndPos.x - this._aiStartPos.x) * ease;
+    mesh.position.z = this._aiStartPos.z + (this._aiEndPos.z - this._aiStartPos.z) * ease;
+
+    // Parabolic arc for vertical lift: raises 0.08m at peak (t = 0.5)
+    const arcY = Math.sin(t * Math.PI) * 0.08;
+    mesh.position.y = this._aiStartPos.y + (this._aiEndPos.y - this._aiStartPos.y) * ease + arcY;
+
+    // Gentle tilt in direction of travel
+    mesh.rotation.x = Math.sin(t * Math.PI) * 0.08;
+
+    if (t >= 1.0) {
+      this.isAiAnimating = false;
+      mesh.position.copy(this._aiEndPos);
+      mesh.rotation.set(0, 0, 0);
+      this.finalizeAiMove();
+    }
+  }
+
   // -------------------------------------------------------------------------
-  // Grab events
+  // Grab events (Human Player - White)
   // -------------------------------------------------------------------------
 
   private onGrab(entity: Entity): void {
-    if (this.gameOver) {
-      // Drop it immediately — game is over.
+    if (this.gameOver || this.isAiThinking || this.isAiAnimating) {
       this.grabSystem?.forceRelease(entity);
       return;
     }
@@ -250,20 +325,29 @@ export class ChessSystem extends createSystem({
     const color  = entity.getValue(ChessPiece, 'color')  || 'white';
     if (!square) return;
 
-    // Wrong turn — force-release with feedback.
-    if (color !== turnColor(this.chess)) {
+    // Black pieces are played by Stockfish AI
+    if (color === 'black') {
       this.grabSystem?.forceRelease(entity);
       chessAudio.playInvalid();
       if (this.hintEl) {
-        const whose = turnColor(this.chess);
-        this.hintEl.setProperties({ text: `It is ${whose}'s turn` });
+        this.hintEl.setProperties({ text: 'Black pieces are controlled by Stockfish AI' });
+      }
+      return;
+    }
+
+    // Must be White's turn
+    if (turnColor(this.chess) !== 'white') {
+      this.grabSystem?.forceRelease(entity);
+      chessAudio.playInvalid();
+      if (this.hintEl) {
+        this.hintEl.setProperties({ text: 'Waiting for Stockfish AI to move...' });
       }
       return;
     }
 
     chessAudio.playPick();
 
-    // Compute legal destinations from chess.js (verbose = includes capture flag).
+    // Compute legal destinations from chess.js
     const moves = this.chess.moves({ square: square as Square, verbose: true });
     this.currentLegalSquares = moves.map((m) => m.to);
     this.showIndicators(moves);
@@ -292,34 +376,43 @@ export class ChessSystem extends createSystem({
     if (toSq && this.currentLegalSquares.includes(toSq)) {
       let moveResult: ReturnType<Chess['move']> | null = null;
       try {
-        // Always promote to queen for pawn promotion.
         moveResult = this.chess.move({ from: fromSq, to: toSq, promotion: 'q' });
       } catch {
         moveResult = null;
       }
 
       if (moveResult) {
-        // Handle capture: find the entity on the destination square and tray it.
+        // Handle capture
         if (moveResult.captured) {
-          // For en passant the captured pawn is not on `toSq` but one rank behind.
           const capturedSq = moveResult.flags.includes('e')
-            ? toSq[0] + fromSq[1]   // en-passant captured pawn square
+            ? toSq[0] + fromSq[1]
             : toSq;
-          const capturedColor = moveResult.color === 'w' ? 'black' : 'white';
-          this.relocateCapturedPiece(capturedSq, capturedColor);
+          this.relocateCapturedPiece(capturedSq, 'black');
           chessAudio.playCapture();
         } else {
           chessAudio.playDrop();
         }
+
+        // Handle castling rook
+        this.handleCastlingRook(moveResult.flags, 'w');
 
         // Snap moved piece to target square center, update ECS component.
         this.snapToSquare(entity, toSq);
         entity.setValue(ChessPiece, 'square', toSq);
         entity.setValue(ChessPiece, 'originalSquare', toSq);
 
+        if (moveResult.promotion) {
+          entity.setValue(ChessPiece, 'type', 'queen');
+        }
+
         this.checkGameEnd();
         this.refreshStatusUI();
         this.currentLegalSquares = [];
+
+        // If game continues, trigger AI (Black) response!
+        if (!this.gameOver && turnColor(this.chess) === 'black') {
+          this.triggerAiMove();
+        }
         return;
       }
     }
@@ -331,6 +424,153 @@ export class ChessSystem extends createSystem({
   }
 
   // -------------------------------------------------------------------------
+  // Stockfish AI (Black)
+  // -------------------------------------------------------------------------
+
+  private triggerAiMove(): void {
+    this.isAiThinking = true;
+    this.refreshStatusUI();
+
+    this.stockfish.getBestMove(this.chess.fen(), (move) => {
+      this.onStockfishMove(move);
+    });
+  }
+
+  private onStockfishMove(move: StockfishMove | null): void {
+    if (this.gameOver || turnColor(this.chess) !== 'black') {
+      this.isAiThinking = false;
+      return;
+    }
+
+    this.isAiThinking = false;
+
+    if (!move) {
+      this.checkGameEnd();
+      this.refreshStatusUI();
+      return;
+    }
+
+    // Find Black piece entity on move.from
+    let aiEntity: Entity | null = null;
+    for (const e of this.queries.pieces.entities) {
+      if (e.getValue(ChessPiece, 'square') === move.from && !e.getValue(ChessPiece, 'isCaptured')) {
+        aiEntity = e;
+        break;
+      }
+    }
+
+    if (!aiEntity || !aiEntity.object3D) {
+      // Fallback: apply directly without animation
+      this.applyAiMoveDirectly(move);
+      return;
+    }
+
+    // Setup animation
+    this.aiAnimEntity = aiEntity;
+    this.aiAnimFromSq = move.from;
+    this.aiAnimToSq = move.to;
+    this.aiAnimPromotion = move.promotion;
+    this.aiAnimElapsed = 0;
+    this._aiStartPos.copy(aiEntity.object3D.position);
+    this._aiEndPos.copy(squareToWorldPosition(move.to));
+    this.isAiAnimating = true;
+
+    chessAudio.playPick();
+
+    if (this.hintEl) {
+      this.hintEl.setProperties({
+        text: `Stockfish moving ${move.from.toUpperCase()} to ${move.to.toUpperCase()}`,
+      });
+    }
+  }
+
+  private finalizeAiMove(): void {
+    if (!this.aiAnimEntity) return;
+
+    let moveResult: ReturnType<Chess['move']> | null = null;
+    try {
+      moveResult = this.chess.move({
+        from: this.aiAnimFromSq,
+        to: this.aiAnimToSq,
+        promotion: this.aiAnimPromotion || 'q',
+      });
+    } catch {
+      moveResult = null;
+    }
+
+    if (moveResult) {
+      if (moveResult.captured) {
+        const capturedSq = moveResult.flags.includes('e')
+          ? this.aiAnimToSq[0] + this.aiAnimFromSq[1]
+          : this.aiAnimToSq;
+        this.relocateCapturedPiece(capturedSq, 'white');
+        chessAudio.playCapture();
+      } else {
+        chessAudio.playDrop();
+      }
+
+      this.handleCastlingRook(moveResult.flags, 'b');
+
+      this.snapToSquare(this.aiAnimEntity, this.aiAnimToSq);
+      this.aiAnimEntity.setValue(ChessPiece, 'square', this.aiAnimToSq);
+      this.aiAnimEntity.setValue(ChessPiece, 'originalSquare', this.aiAnimToSq);
+
+      if (moveResult.promotion) {
+        this.aiAnimEntity.setValue(ChessPiece, 'type', 'queen');
+      }
+    } else {
+      this.snapToSquare(this.aiAnimEntity, this.aiAnimFromSq);
+    }
+
+    this.aiAnimEntity = null;
+    this.checkGameEnd();
+    this.refreshStatusUI();
+  }
+
+  private applyAiMoveDirectly(move: StockfishMove): void {
+    try {
+      const res = this.chess.move({
+        from: move.from,
+        to: move.to,
+        promotion: move.promotion || 'q',
+      });
+      if (res) {
+        if (res.captured) {
+          const capturedSq = res.flags.includes('e') ? move.to[0] + move.from[1] : move.to;
+          this.relocateCapturedPiece(capturedSq, 'white');
+          chessAudio.playCapture();
+        } else {
+          chessAudio.playDrop();
+        }
+        this.handleCastlingRook(res.flags, 'b');
+        for (const e of this.queries.pieces.entities) {
+          if (e.getValue(ChessPiece, 'square') === move.from && !e.getValue(ChessPiece, 'isCaptured')) {
+            this.snapToSquare(e, move.to);
+            e.setValue(ChessPiece, 'square', move.to);
+            e.setValue(ChessPiece, 'originalSquare', move.to);
+            break;
+          }
+        }
+      }
+    } catch (_) {}
+
+    this.checkGameEnd();
+    this.refreshStatusUI();
+  }
+
+  public toggleDifficulty(): void {
+    const current = this.stockfish.getDifficulty();
+    const next: Difficulty = current === 'easy' ? 'medium' : 'easy';
+    this.stockfish.setDifficulty(next);
+
+    const label = next === 'easy' ? 'AI: Easy' : 'AI: Medium';
+    if (this.diffLabelEl) {
+      this.diffLabelEl.setProperties({ text: label });
+    }
+    chessAudio.playPick();
+  }
+
+  // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
 
@@ -339,6 +579,30 @@ export class ChessSystem extends createSystem({
     if (!mesh || !square) return;
     mesh.position.copy(squareToWorldPosition(square));
     mesh.rotation.set(0, 0, 0);
+  }
+
+  /** Relocate rook if castling occurred. */
+  private handleCastlingRook(flags: string, color: 'w' | 'b'): void {
+    let rookFrom = '';
+    let rookTo = '';
+    if (color === 'w') {
+      if (flags.includes('k')) { rookFrom = 'h1'; rookTo = 'f1'; }
+      else if (flags.includes('q')) { rookFrom = 'a1'; rookTo = 'd1'; }
+    } else {
+      if (flags.includes('k')) { rookFrom = 'h8'; rookTo = 'f8'; }
+      else if (flags.includes('q')) { rookFrom = 'a8'; rookTo = 'd8'; }
+    }
+
+    if (rookFrom && rookTo) {
+      for (const entity of this.queries.pieces.entities) {
+        if (entity.getValue(ChessPiece, 'square') === rookFrom && !entity.getValue(ChessPiece, 'isCaptured')) {
+          this.snapToSquare(entity, rookTo);
+          entity.setValue(ChessPiece, 'square', rookTo);
+          entity.setValue(ChessPiece, 'originalSquare', rookTo);
+          break;
+        }
+      }
+    }
   }
 
   /** Move the captured piece's 3-D mesh to the capture tray. */
@@ -410,10 +674,10 @@ export class ChessSystem extends createSystem({
 
   private refreshStatusUI(): void {
     if (!this.statusEl) return;
-    const whose = turnColor(this.chess);
+    const diff = this.stockfish.getDifficulty() === 'easy' ? 'Easy' : 'Medium';
 
     if (this.chess.isCheckmate()) {
-      const winner = whose === 'white' ? 'Black' : 'White';
+      const winner = turnColor(this.chess) === 'white' ? 'Stockfish (Black)' : 'You (White)';
       this.statusEl.setProperties({ text: `CHECKMATE! ${winner} wins!` });
       this.hintEl?.setProperties({ text: 'Tap "New Game" to play again.' });
     } else if (this.chess.isStalemate()) {
@@ -428,13 +692,24 @@ export class ChessSystem extends createSystem({
     } else if (this.chess.isDraw()) {
       this.statusEl.setProperties({ text: 'Draw!' });
       this.hintEl?.setProperties({ text: 'Tap "New Game" to play again.' });
+    } else if (this.isAiThinking) {
+      this.statusEl.setProperties({ text: 'AI is thinking...' });
+      this.hintEl?.setProperties({ text: `Stockfish (${diff}) calculating reply...` });
+    } else if (this.isAiAnimating) {
+      this.statusEl.setProperties({ text: 'Stockfish is moving...' });
     } else if (this.chess.inCheck()) {
-      this.statusEl.setProperties({ text: `${whose.charAt(0).toUpperCase() + whose.slice(1)} is in CHECK!` });
-      this.hintEl?.setProperties({ text: 'Your king is in check - you must move out.' });
+      const checked = turnColor(this.chess) === 'white' ? 'You are' : 'Stockfish is';
+      this.statusEl.setProperties({ text: `${checked} in CHECK!` });
+      this.hintEl?.setProperties({ text: 'King is under attack!' });
     } else {
-      const label = whose.charAt(0).toUpperCase() + whose.slice(1);
-      this.statusEl.setProperties({ text: `${label} to move` });
-      this.hintEl?.setProperties({ text: 'Pinch piece with thumb & index finger to lift' });
+      const whose = turnColor(this.chess);
+      if (whose === 'white') {
+        this.statusEl.setProperties({ text: 'Your turn (White)' });
+        this.hintEl?.setProperties({ text: `Pinch piece to lift | Difficulty: ${diff}` });
+      } else {
+        this.statusEl.setProperties({ text: 'AI turn (Black)' });
+        this.hintEl?.setProperties({ text: `Stockfish (${diff}) preparing move...` });
+      }
     }
   }
 
@@ -443,6 +718,11 @@ export class ChessSystem extends createSystem({
   // -------------------------------------------------------------------------
 
   public resetGame(): void {
+    this.stockfish.stop();
+    this.isAiThinking = false;
+    this.isAiAnimating = false;
+    this.aiAnimEntity = null;
+
     this.chess.reset();
     this.gameOver = false;
     this.clearIndicators();

@@ -10,6 +10,7 @@ import {
   Group,
   Mesh,
   MeshStandardMaterial,
+  TorusGeometry,
   Vector3,
 } from '@iwsdk/core';
 
@@ -184,13 +185,21 @@ export function worldPositionToSquare(worldPos: Vector3): string | null {
 
 /**
  * Creates visual destination indicator mesh.
+ * - Move: Circular glowing disc for empty landing squares.
+ * - Capture: Glowing outer ring that encircles enemy pieces without clipping.
  */
 export function createHighlightMarker(type: 'move' | 'capture' = 'move'): Mesh {
-  const size = SQUARE_SIZE * 0.96;
-  const geo = new BoxGeometry(size, 0.003, size);
-  const mat = type === 'capture' ? indicatorCaptureMaterial : indicatorMoveMaterial;
-  const mesh = new Mesh(geo, mat);
-  mesh.name = `highlight-${type}`;
+  if (type === 'capture') {
+    const geo = new TorusGeometry(0.035, 0.0035, 10, 24);
+    const mesh = new Mesh(geo, indicatorCaptureMaterial);
+    mesh.rotation.x = Math.PI / 2;
+    mesh.name = 'highlight-capture';
+    return mesh;
+  }
+
+  const geo = new CylinderGeometry(0.024, 0.024, 0.004, 24);
+  const mesh = new Mesh(geo, indicatorMoveMaterial);
+  mesh.name = 'highlight-move';
   return mesh;
 }
 

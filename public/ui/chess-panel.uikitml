@@ -1,13 +1,20 @@
 <!--
-  Hand Chess VR - Seated Spatial Control Panel
+  Hand Chess VR - Spatial Control & Game State Panel
+  Seated Quest Hands-Only VR Experience
 -->
 <style>
   .panel-root {
     flex-direction: column;
-    width: 380px;
+    width: 390px;
     border-radius: 16px;
     padding: 18px;
     gap: 12px;
+  }
+
+  .view-container {
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
   }
 
   .eyebrow {
@@ -24,20 +31,41 @@
     line-height: 32px;
   }
 
-  .status-badge {
-    border-radius: 8px;
-    padding: 12px;
-    flex-direction: column;
-    gap: 4px;
+  .heading-victory {
+    color: #4ade80;
+    font-size: 32px;
+    font-weight: 800;
+    line-height: 38px;
   }
 
-  .status-title {
+  .heading-defeat {
+    color: #f87171;
+    font-size: 32px;
+    font-weight: 800;
+    line-height: 38px;
+  }
+
+  .heading-draw {
+    color: #93c5fd;
+    font-size: 32px;
+    font-weight: 800;
+    line-height: 38px;
+  }
+
+  .info-badge {
+    border-radius: 10px;
+    padding: 12px;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .info-title {
     color: #f1f5f9;
-    font-size: 17px;
+    font-size: 16px;
     font-weight: 600;
   }
 
-  .status-hint {
+  .info-text {
     color: #94a3b8;
     font-size: 13px;
     line-height: 18px;
@@ -56,25 +84,78 @@
     padding: 12px;
   }
 
+  .btn-primary {
+    border-radius: 12px;
+    padding: 14px;
+    justify-content: center;
+  }
+
   .btn-label {
     font-size: 15px;
     font-weight: 600;
     color: #ffffff;
   }
+
+  .btn-label-large {
+    font-size: 17px;
+    font-weight: 700;
+    color: #ffffff;
+  }
 </style>
 <Panel class="panel-root">
-  <div class="eyebrow">META QUEST - HAND TRACKING</div>
-  <div class="heading">Hand Chess VR</div>
-  <div class="status-badge">
-    <div id="turn-text" class="status-title">White to move</div>
-    <div id="hint-text" class="status-hint">Pinch piece with thumb &amp; index finger to lift</div>
+  <!-- START SCREEN VIEW -->
+  <div id="view-start" class="view-container">
+    <div class="eyebrow">SEATED QUEST - HANDS ONLY</div>
+    <div class="heading">Hand Chess VR</div>
+    <div class="info-badge">
+      <div class="info-title">How to Play:</div>
+      <div class="info-text">- Pinch piece with thumb &amp; index finger to lift</div>
+      <div class="info-text">- Green circles show legal moves</div>
+      <div class="info-text">- Red rings show capture targets</div>
+      <div class="info-text">- Stockfish AI plays Black automatically</div>
+    </div>
+    <div class="buttons-row">
+      <Button id="btn-start-diff" class="btn">
+        <ButtonLabel id="start-diff-label" class="btn-label">Difficulty: Easy</ButtonLabel>
+      </Button>
+    </div>
+    <div class="buttons-row">
+      <Button id="btn-start-game" class="btn btn-primary">
+        <ButtonLabel class="btn-label-large">Pinch to Start Game</ButtonLabel>
+      </Button>
+    </div>
   </div>
-  <div class="buttons-row">
-    <Button id="btn-difficulty" class="btn">
-      <ButtonLabel id="difficulty-label" class="btn-label">AI: Easy</ButtonLabel>
-    </Button>
-    <Button id="btn-reset" class="btn">
-      <ButtonLabel class="btn-label">New Game</ButtonLabel>
-    </Button>
+
+  <!-- ACTIVE PLAYING HUD -->
+  <div id="view-playing" class="view-container">
+    <div class="eyebrow">SEATED QUEST - HAND TRACKING</div>
+    <div class="heading">Hand Chess VR</div>
+    <div class="info-badge">
+      <div id="turn-text" class="info-title">Your turn (White)</div>
+      <div id="hint-text" class="info-text">Pinch piece with thumb &amp; index finger to lift</div>
+    </div>
+    <div class="buttons-row">
+      <Button id="btn-difficulty" class="btn">
+        <ButtonLabel id="difficulty-label" class="btn-label">AI: Easy</ButtonLabel>
+      </Button>
+      <Button id="btn-reset" class="btn">
+        <ButtonLabel class="btn-label">Restart</ButtonLabel>
+      </Button>
+    </div>
+  </div>
+
+  <!-- WIN / LOSE / DRAW MODAL -->
+  <div id="view-gameover" class="view-container">
+    <div id="gameover-eyebrow" class="eyebrow">MATCH COMPLETED</div>
+    <div id="gameover-title" class="heading-victory">VICTORY!</div>
+    <div class="info-badge">
+      <div id="gameover-detail" class="info-title">You checkmated Stockfish AI!</div>
+      <div id="gameover-stats" class="info-text">Pinch below to start a new match.</div>
+    </div>
+    <div class="buttons-row">
+      <Button id="btn-gameover-restart" class="btn btn-primary">
+        <ButtonLabel class="btn-label-large">Pinch to Play Again</ButtonLabel>
+      </Button>
+    </div>
   </div>
 </Panel>

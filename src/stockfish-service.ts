@@ -159,3 +159,4 @@ export class StockfishService {
     this.isReady = false;
   }
 }
+

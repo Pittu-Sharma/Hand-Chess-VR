@@ -5,13 +5,14 @@
  * (running in a background Web Worker) as the Black opponent.
  *
  * Features:
- *   - Human plays White with hands-only tracking & pinch grab.
- *   - Stockfish AI plays Black with Easy / Medium skill level.
- *   - Automatic AI replies: after White completes a move, Stockfish computes
- *     its move and the black piece animates in an arc to the target square.
- *   - Legal moves only: illegal moves snap back to original square.
- *   - Full rule handling: captures, castling, en passant, promotion, check,
- *     checkmate, and draws.
+ *   - Seated Quest hands-only experience (no controllers).
+ *   - Start screen with how-to-play tips and difficulty selector.
+ *   - High-visibility legal square indicators when a piece is grabbed:
+ *     glowing emerald discs for legal moves, glowing ruby rings for captures.
+ *   - Rich procedural spatial audio (piece pick, move drop, piece capture,
+ *     check alarm, game start chime, victory fanfare, defeat progression).
+ *   - Floating Win / Lose / Draw panel with game stats and a pinch-to-restart button.
+ *   - Stockfish AI plays Black automatically with 3D arc piece animation.
  *   - Zero heap allocation in update(): pre-allocated Vector3 scratch objects.
  */
 
@@ -53,9 +54,8 @@ const HOLD_Y_OFFSET = 0.06;
 /** Distance (m) at which a hand index-tip triggers hover glow. */
 const HOVER_RADIUS = 0.085;
 
-/** Hover emissive hex: amber for white-side pieces, cyan for black-side. */
+/** Hover emissive hex: amber for white-side pieces. */
 const HOVER_EMISSIVE_WHITE = 0xffaa44;
-const HOVER_EMISSIVE_BLACK = 0x44ddff;
 const HOVER_INTENSITY = 0.35;
 
 /** AI piece travel animation duration in seconds. */
@@ -90,6 +90,15 @@ function turnColor(chess: Chess): 'white' | 'black' {
   return chess.turn() === 'w' ? 'white' : 'black';
 }
 
+/** Toggle UI component visibility and layout inclusion. */
+function setViewVisible(el: any, visible: boolean): void {
+  if (!el) return;
+  if (el.displayed) {
+    el.displayed.value = visible;
+  }
+  el.visible = visible;
+}
+
 // ---------------------------------------------------------------------------
 // System
 // ---------------------------------------------------------------------------
@@ -115,13 +124,25 @@ export class ChessSystem extends createSystem({
   // Capture-tray counters
   private capturedWhiteCount = 0;
   private capturedBlackCount = 0;
+  private moveCount = 0;
 
   // UIKitML element references
+  private viewStartEl: any = null;
+  private viewPlayingEl: any = null;
+  private viewGameOverEl: any = null;
+
   private statusEl: any = null;
   private hintEl: any = null;
   private diffLabelEl: any = null;
+  private startDiffLabelEl: any = null;
+
+  private gameOverEyebrowEl: any = null;
+  private gameOverTitleEl: any = null;
+  private gameOverDetailEl: any = null;
+  private gameOverStatsEl: any = null;
 
   // Game state flags
+  private gameStarted = false;
   private gameOver = false;
   private isAiThinking = false;
   private isAiAnimating = false;
@@ -166,10 +187,36 @@ export class ChessSystem extends createSystem({
     // Spatial UI panel.
     const panel = this.world.getSceneObject<UIKitMLAsset>('chess-panel');
     if (panel) {
+      this.viewStartEl = panel.getElementById('view-start');
+      this.viewPlayingEl = panel.getElementById('view-playing');
+      this.viewGameOverEl = panel.getElementById('view-gameover');
+
       this.statusEl = panel.getElementById('turn-text');
       this.hintEl   = panel.getElementById('hint-text');
       this.diffLabelEl = panel.getElementById('difficulty-label');
+      this.startDiffLabelEl = panel.getElementById('start-diff-label');
 
+      this.gameOverEyebrowEl = panel.getElementById('gameover-eyebrow');
+      this.gameOverTitleEl = panel.getElementById('gameover-title');
+      this.gameOverDetailEl = panel.getElementById('gameover-detail');
+      this.gameOverStatsEl = panel.getElementById('gameover-stats');
+
+      // Start screen buttons
+      const startGameBtn = panel.getElementById('btn-start-game');
+      if (startGameBtn) {
+        const onStart = () => this.startGame();
+        startGameBtn.addEventListener('click', onStart);
+        this.cleanupFuncs.push(() => startGameBtn.removeEventListener('click', onStart));
+      }
+
+      const startDiffBtn = panel.getElementById('btn-start-diff');
+      if (startDiffBtn) {
+        const onStartDiff = () => this.toggleDifficulty();
+        startDiffBtn.addEventListener('click', onStartDiff);
+        this.cleanupFuncs.push(() => startDiffBtn.removeEventListener('click', onStartDiff));
+      }
+
+      // Playing HUD buttons
       const resetBtn = panel.getElementById('btn-reset');
       if (resetBtn) {
         const onReset = () => this.resetGame();
@@ -183,14 +230,47 @@ export class ChessSystem extends createSystem({
         diffBtn.addEventListener('click', onToggleDiff);
         this.cleanupFuncs.push(() => diffBtn.removeEventListener('click', onToggleDiff));
       }
+
+      // Game Over modal buttons
+      const restartBtn = panel.getElementById('btn-gameover-restart');
+      if (restartBtn) {
+        const onRestart = () => this.restartFromGameOver();
+        restartBtn.addEventListener('click', onRestart);
+        this.cleanupFuncs.push(() => restartBtn.removeEventListener('click', onRestart));
+      }
     }
 
     this.cleanupFuncs.push(() => this.stockfish.terminate());
-    this.refreshStatusUI();
+
+    // Show initial Start Screen
+    this.showView('start');
   }
 
   // -------------------------------------------------------------------------
-  // update — runs every frame, 72–90 fps.  NO allocation allowed here.
+  // View navigation
+  // -------------------------------------------------------------------------
+
+  private showView(view: 'start' | 'playing' | 'gameover'): void {
+    setViewVisible(this.viewStartEl, view === 'start');
+    setViewVisible(this.viewPlayingEl, view === 'playing');
+    setViewVisible(this.viewGameOverEl, view === 'gameover');
+  }
+
+  private startGame(): void {
+    this.gameStarted = true;
+    this.gameOver = false;
+    this.showView('playing');
+    chessAudio.playGameStart();
+    this.refreshStatusUI();
+  }
+
+  private restartFromGameOver(): void {
+    this.resetGame();
+    this.startGame();
+  }
+
+  // -------------------------------------------------------------------------
+  // update — runs every frame, 72–90 fps. NO allocation allowed here.
   // -------------------------------------------------------------------------
 
   update(delta: number, _time: number): void {
@@ -222,7 +302,7 @@ export class ChessSystem extends createSystem({
    * index-tip space and within HOVER_RADIUS. Only White pieces glow for the human.
    */
   private updateHoverGlow(): void {
-    if (this.isAiThinking || this.isAiAnimating || this.gameOver) {
+    if (!this.gameStarted || this.isAiThinking || this.isAiAnimating || this.gameOver) {
       if (this._hoveredEntity) {
         const prevMesh = this._hoveredEntity.object3D;
         if (prevMesh) setHoverGlow(prevMesh, false, 0);
@@ -316,7 +396,7 @@ export class ChessSystem extends createSystem({
   // -------------------------------------------------------------------------
 
   private onGrab(entity: Entity): void {
-    if (this.gameOver || this.isAiThinking || this.isAiAnimating) {
+    if (!this.gameStarted || this.gameOver || this.isAiThinking || this.isAiAnimating) {
       this.grabSystem?.forceRelease(entity);
       return;
     }
@@ -347,7 +427,7 @@ export class ChessSystem extends createSystem({
 
     chessAudio.playPick();
 
-    // Compute legal destinations from chess.js
+    // Compute legal destinations from chess.js and highlight squares
     const moves = this.chess.moves({ square: square as Square, verbose: true });
     this.currentLegalSquares = moves.map((m) => m.to);
     this.showIndicators(moves);
@@ -382,6 +462,8 @@ export class ChessSystem extends createSystem({
       }
 
       if (moveResult) {
+        this.moveCount++;
+
         // Handle capture
         if (moveResult.captured) {
           const capturedSq = moveResult.flags.includes('e')
@@ -406,12 +488,13 @@ export class ChessSystem extends createSystem({
         }
 
         this.checkGameEnd();
-        this.refreshStatusUI();
         this.currentLegalSquares = [];
 
         // If game continues, trigger AI (Black) response!
         if (!this.gameOver && turnColor(this.chess) === 'black') {
           this.triggerAiMove();
+        } else {
+          this.refreshStatusUI();
         }
         return;
       }
@@ -499,6 +582,8 @@ export class ChessSystem extends createSystem({
     }
 
     if (moveResult) {
+      this.moveCount++;
+
       if (moveResult.captured) {
         const capturedSq = moveResult.flags.includes('e')
           ? this.aiAnimToSq[0] + this.aiAnimFromSq[1]
@@ -535,6 +620,7 @@ export class ChessSystem extends createSystem({
         promotion: move.promotion || 'q',
       });
       if (res) {
+        this.moveCount++;
         if (res.captured) {
           const capturedSq = res.flags.includes('e') ? move.to[0] + move.from[1] : move.to;
           this.relocateCapturedPiece(capturedSq, 'white');
@@ -563,9 +649,14 @@ export class ChessSystem extends createSystem({
     const next: Difficulty = current === 'easy' ? 'medium' : 'easy';
     this.stockfish.setDifficulty(next);
 
-    const label = next === 'easy' ? 'AI: Easy' : 'AI: Medium';
+    const hudLabel = next === 'easy' ? 'AI: Easy' : 'AI: Medium';
+    const startLabel = next === 'easy' ? 'Difficulty: Easy' : 'Difficulty: Medium';
+
     if (this.diffLabelEl) {
-      this.diffLabelEl.setProperties({ text: label });
+      this.diffLabelEl.setProperties({ text: hudLabel });
+    }
+    if (this.startDiffLabelEl) {
+      this.startDiffLabelEl.setProperties({ text: startLabel });
     }
     chessAudio.playPick();
   }
@@ -633,7 +724,7 @@ export class ChessSystem extends createSystem({
   }
 
   // -------------------------------------------------------------------------
-  // Visual indicators
+  // Visual indicators (Legal Squares & Captures)
   // -------------------------------------------------------------------------
 
   private showIndicators(moves: Move[]): void {
@@ -642,9 +733,14 @@ export class ChessSystem extends createSystem({
       const isCapture = m.captured !== undefined;
       const sq = m.to;
       if (!sq) continue;
+
       const indicator = createHighlightMarker(isCapture ? 'capture' : 'move');
       const worldPos = squareToWorldPosition(sq);
-      indicator.position.set(worldPos.x, worldPos.y + 0.003, worldPos.z);
+
+      // Place slightly above tile to avoid z-fighting
+      const yOffset = isCapture ? 0.005 : 0.004;
+      indicator.position.set(worldPos.x, worldPos.y + yOffset, worldPos.z);
+
       this.world.scene.add(indicator);
       this.activeIndicators.push(indicator);
     }
@@ -662,12 +758,50 @@ export class ChessSystem extends createSystem({
   // Game-state: check / checkmate / draw
   // -------------------------------------------------------------------------
 
-  /** Called after each successful move. Sets gameOver and plays audio. */
+  /** Called after each successful move. Handles end states and floating modal. */
   private checkGameEnd(): void {
-    if (this.chess.isCheckmate() || this.chess.isDraw()) {
+    const isCheckmate = this.chess.isCheckmate();
+    const isDraw = this.chess.isDraw();
+
+    if (isCheckmate || isDraw) {
       this.gameOver = true;
-      chessAudio.playCheck();
-    } else if (this.chess.inCheck()) {
+      const whoseTurn = turnColor(this.chess);
+      const diff = this.stockfish.getDifficulty() === 'easy' ? 'Easy' : 'Medium';
+      const statsText = `Total Moves: ${this.moveCount} | AI Level: ${diff}`;
+
+      if (isCheckmate) {
+        if (whoseTurn === 'black') {
+          // Human (White) checkmated Black (AI) -> VICTORY!
+          if (this.gameOverTitleEl) this.gameOverTitleEl.setProperties({ text: 'VICTORY!' });
+          if (this.gameOverDetailEl) this.gameOverDetailEl.setProperties({ text: 'You checkmated Stockfish AI!' });
+          if (this.gameOverStatsEl) this.gameOverStatsEl.setProperties({ text: statsText });
+          chessAudio.playWin();
+        } else {
+          // AI (Black) checkmated White -> DEFEAT
+          if (this.gameOverTitleEl) this.gameOverTitleEl.setProperties({ text: 'DEFEAT' });
+          if (this.gameOverDetailEl) this.gameOverDetailEl.setProperties({ text: 'Stockfish AI delivered checkmate.' });
+          if (this.gameOverStatsEl) this.gameOverStatsEl.setProperties({ text: statsText });
+          chessAudio.playDefeat();
+        }
+      } else {
+        // Draw / Stalemate
+        let drawReason = 'Match drawn.';
+        if (this.chess.isStalemate()) drawReason = 'Stalemate - No legal moves.';
+        else if (this.chess.isInsufficientMaterial()) drawReason = 'Draw - Insufficient material.';
+        else if (this.chess.isThreefoldRepetition()) drawReason = 'Draw - Threefold repetition.';
+
+        if (this.gameOverTitleEl) this.gameOverTitleEl.setProperties({ text: 'DRAW!' });
+        if (this.gameOverDetailEl) this.gameOverDetailEl.setProperties({ text: drawReason });
+        if (this.gameOverStatsEl) this.gameOverStatsEl.setProperties({ text: statsText });
+        chessAudio.playDrop();
+      }
+
+      // Display floating game-over panel
+      this.showView('gameover');
+      return;
+    }
+
+    if (this.chess.inCheck()) {
       chessAudio.playCheck();
     }
   }
@@ -676,23 +810,7 @@ export class ChessSystem extends createSystem({
     if (!this.statusEl) return;
     const diff = this.stockfish.getDifficulty() === 'easy' ? 'Easy' : 'Medium';
 
-    if (this.chess.isCheckmate()) {
-      const winner = turnColor(this.chess) === 'white' ? 'Stockfish (Black)' : 'You (White)';
-      this.statusEl.setProperties({ text: `CHECKMATE! ${winner} wins!` });
-      this.hintEl?.setProperties({ text: 'Tap "New Game" to play again.' });
-    } else if (this.chess.isStalemate()) {
-      this.statusEl.setProperties({ text: 'STALEMATE - Draw!' });
-      this.hintEl?.setProperties({ text: 'Tap "New Game" to play again.' });
-    } else if (this.chess.isInsufficientMaterial()) {
-      this.statusEl.setProperties({ text: 'Draw - Insufficient material' });
-      this.hintEl?.setProperties({ text: 'Tap "New Game" to play again.' });
-    } else if (this.chess.isThreefoldRepetition()) {
-      this.statusEl.setProperties({ text: 'Draw - Threefold repetition' });
-      this.hintEl?.setProperties({ text: 'Tap "New Game" to play again.' });
-    } else if (this.chess.isDraw()) {
-      this.statusEl.setProperties({ text: 'Draw!' });
-      this.hintEl?.setProperties({ text: 'Tap "New Game" to play again.' });
-    } else if (this.isAiThinking) {
+    if (this.isAiThinking) {
       this.statusEl.setProperties({ text: 'AI is thinking...' });
       this.hintEl?.setProperties({ text: `Stockfish (${diff}) calculating reply...` });
     } else if (this.isAiAnimating) {
@@ -705,7 +823,7 @@ export class ChessSystem extends createSystem({
       const whose = turnColor(this.chess);
       if (whose === 'white') {
         this.statusEl.setProperties({ text: 'Your turn (White)' });
-        this.hintEl?.setProperties({ text: `Pinch piece to lift | Difficulty: ${diff}` });
+        this.hintEl?.setProperties({ text: `Pinch piece to lift | AI: ${diff}` });
       } else {
         this.statusEl.setProperties({ text: 'AI turn (Black)' });
         this.hintEl?.setProperties({ text: `Stockfish (${diff}) preparing move...` });
@@ -725,6 +843,7 @@ export class ChessSystem extends createSystem({
 
     this.chess.reset();
     this.gameOver = false;
+    this.moveCount = 0;
     this.clearIndicators();
     this.currentLegalSquares = [];
     this.capturedWhiteCount = 0;

@@ -58,7 +58,7 @@
     {
       "id": "chess-board",
       "name": "Floating Chess Board",
-      "framingRole": "hero",
+      "framingRole": "content",
       "content": {
         "type": "asset",
         "asset": "chess-board",

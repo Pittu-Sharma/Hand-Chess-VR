@@ -12,6 +12,16 @@ export interface StockfishMove {
   promotion?: string;
 }
 
+function getStockfishWorkerUrl(filename: string): string {
+  const base = import.meta.env.BASE_URL || './';
+  const cleanBase = base.endsWith('/') ? base : `${base}/`;
+  const relativePath = `${cleanBase}stockfish/${filename}`;
+  if (typeof window !== 'undefined' && window.location) {
+    return new URL(relativePath, window.location.href).href;
+  }
+  return relativePath;
+}
+
 export class StockfishService {
   private worker: Worker | null = null;
   private isReady = false;
@@ -23,7 +33,7 @@ export class StockfishService {
 
   constructor(difficulty: Difficulty = 'easy') {
     this.difficulty = difficulty;
-    this.initWorker('/stockfish/stockfish-19-lite-single.js');
+    this.initWorker(getStockfishWorkerUrl('stockfish-19-lite-single.js'));
   }
 
   private initWorker(workerScriptUrl: string): void {
@@ -33,9 +43,10 @@ export class StockfishService {
       this.worker = new Worker(workerScriptUrl);
     } catch (err) {
       console.warn(`Failed to create worker for ${workerScriptUrl}:`, err);
-      if (!this.hasFallbackAttempted && workerScriptUrl !== '/stockfish/stockfish-19-asm.js') {
+      const fallbackUrl = getStockfishWorkerUrl('stockfish-19-asm.js');
+      if (!this.hasFallbackAttempted && workerScriptUrl !== fallbackUrl) {
         this.hasFallbackAttempted = true;
-        this.initWorker('/stockfish/stockfish-19-asm.js');
+        this.initWorker(fallbackUrl);
       }
       return;
     }
@@ -46,12 +57,13 @@ export class StockfishService {
 
     this.worker.onerror = (err) => {
       console.error('Stockfish worker error:', err);
-      if (!this.hasFallbackAttempted && workerScriptUrl !== '/stockfish/stockfish-19-asm.js') {
+      const fallbackUrl = getStockfishWorkerUrl('stockfish-19-asm.js');
+      if (!this.hasFallbackAttempted && workerScriptUrl !== fallbackUrl) {
         this.hasFallbackAttempted = true;
         try {
           this.worker?.terminate();
         } catch (_) {}
-        this.initWorker('/stockfish/stockfish-19-asm.js');
+        this.initWorker(fallbackUrl);
       }
     };
 

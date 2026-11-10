@@ -27,7 +27,9 @@ import {
   Grabbed,
   Mesh,
   OneHandGrabbable,
+  Raycaster,
   UIKitMLAsset,
+  Vector2,
   Vector3,
 } from '@iwsdk/core';
 import {
@@ -93,10 +95,15 @@ function turnColor(chess: Chess): 'white' | 'black' {
 /** Toggle UI component visibility and layout inclusion. */
 function setViewVisible(el: any, visible: boolean): void {
   if (!el) return;
-  if (el.displayed) {
-    el.displayed.value = visible;
+  if (typeof el.setProperties === 'function') {
+    el.setProperties({ display: visible ? 'flex' : 'none' });
   }
   el.visible = visible;
+  if (typeof el.traverse === 'function') {
+    el.traverse((c: any) => {
+      c.visible = visible;
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +172,20 @@ export class ChessSystem extends createSystem({
 
   private grabSystem: GrabSystem | null = null;
   private _hoveredEntity: Entity | null = null;
+
+  // Mouse interaction state (desktop browser)
+  private mouseSelectedEntity: Entity | null = null;
+  private readonly _raycaster = new Raycaster();
+  private readonly _mouseCoords = new Vector2();
+  private _isOrbiting = false;
+  private _pointerDownX = 0;
+  private _pointerDownY = 0;
+  private _lastPointerX = 0;
+  private _lastPointerY = 0;
+  private _cameraTheta = 0;
+  private _cameraPhi = 0.85;
+  private _cameraRadius = 0.88;
+  private readonly _boardCenter = new Vector3(0, 0.85, -0.80);
 
   // -------------------------------------------------------------------------
   // init
@@ -242,6 +263,10 @@ export class ChessSystem extends createSystem({
 
     this.cleanupFuncs.push(() => this.stockfish.terminate());
 
+    // Setup desktop mouse orbit and click-to-move
+    this.setupDesktopMouseControls();
+    this.updateDesktopCamera();
+
     // Show initial Start Screen
     this.showView('start');
   }
@@ -277,6 +302,7 @@ export class ChessSystem extends createSystem({
     this.updateSmoothing();
     this.updateHoverGlow();
     this.updateAiAnimation(delta);
+    this.updateMouseHover();
   }
 
   /** Lerp held-piece positions toward the hand grip (pinch smoothing). */
@@ -849,6 +875,7 @@ export class ChessSystem extends createSystem({
     this.capturedWhiteCount = 0;
     this.capturedBlackCount = 0;
     this._hoveredEntity = null;
+    this.mouseSelectedEntity = null;
 
     for (const entity of this.queries.pieces.entities) {
       const originalSq = entity.getValue(ChessPiece, 'originalSquare');
@@ -860,5 +887,250 @@ export class ChessSystem extends createSystem({
 
     this.refreshStatusUI();
     chessAudio.playDrop();
+  }
+
+  // -------------------------------------------------------------------------
+  // Desktop mouse controls — orbit camera + click-to-move
+  // These are ignored once WebXR session is active (XR has its own input).
+  // -------------------------------------------------------------------------
+
+  /**
+   * Register pointer/mouse event listeners on the renderer canvas.
+   * - Left drag → orbit the camera around the board.
+   * - Left click (no drag) → select/move a White piece.
+   */
+  private setupDesktopMouseControls(): void {
+    const canvas = this.world.renderer.domElement;
+    if (!canvas) return;
+
+    const isXrActive = () =>
+      this.world.renderer.xr?.isPresenting === true ||
+      (this.world as any).session != null;
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (isXrActive() || e.button !== 0) return;
+      this._pointerDownX = e.clientX;
+      this._pointerDownY = e.clientY;
+      this._lastPointerX = e.clientX;
+      this._lastPointerY = e.clientY;
+      this._isOrbiting = false;
+      canvas.setPointerCapture(e.pointerId);
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (isXrActive()) return;
+      if (!(e.buttons & 1)) return; // left button not held
+
+      const dx = e.clientX - this._lastPointerX;
+      const dy = e.clientY - this._lastPointerY;
+      this._lastPointerX = e.clientX;
+      this._lastPointerY = e.clientY;
+
+      const totalDrag = Math.abs(e.clientX - this._pointerDownX) +
+                        Math.abs(e.clientY - this._pointerDownY);
+      if (totalDrag > 4) this._isOrbiting = true;
+
+      if (this._isOrbiting) {
+        this._cameraTheta -= dx * 0.008;
+        this._cameraPhi   -= dy * 0.006;
+        // clamp phi: 15° … 85° above board
+        this._cameraPhi = Math.max(0.26, Math.min(1.48, this._cameraPhi));
+        this.updateDesktopCamera();
+      }
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (isXrActive() || e.button !== 0) return;
+      canvas.releasePointerCapture(e.pointerId);
+      if (!this._isOrbiting) {
+        this.handleDesktopClick(e.clientX, e.clientY, canvas);
+      }
+      this._isOrbiting = false;
+    };
+
+    const onWheel = (e: WheelEvent) => {
+      if (isXrActive()) return;
+      this._cameraRadius = Math.max(0.45, Math.min(1.5, this._cameraRadius + e.deltaY * 0.001));
+      this.updateDesktopCamera();
+    };
+
+    canvas.addEventListener('pointerdown', onPointerDown as EventListener);
+    canvas.addEventListener('pointermove', onPointerMove as EventListener);
+    canvas.addEventListener('pointerup',   onPointerUp   as EventListener);
+    canvas.addEventListener('wheel',       onWheel       as EventListener, { passive: true });
+
+    this.cleanupFuncs.push(
+      () => canvas.removeEventListener('pointerdown', onPointerDown as EventListener),
+      () => canvas.removeEventListener('pointermove', onPointerMove as EventListener),
+      () => canvas.removeEventListener('pointerup',   onPointerUp   as EventListener),
+      () => canvas.removeEventListener('wheel',       onWheel       as EventListener),
+    );
+  }
+
+  /** Reposition the Three.js camera around the board center using spherical coords. */
+  private updateDesktopCamera(): void {
+    if ((this.world.renderer.xr as any)?.isPresenting === true) return;
+    const cam = this.world.camera;
+    const r   = this._cameraRadius;
+    cam.position.set(
+      this._boardCenter.x + r * Math.sin(this._cameraPhi) * Math.sin(this._cameraTheta),
+      this._boardCenter.y + r * Math.cos(this._cameraPhi),
+      this._boardCenter.z + r * Math.sin(this._cameraPhi) * Math.cos(this._cameraTheta),
+    );
+    cam.lookAt(this._boardCenter);
+  }
+
+  /**
+   * Per-frame mouse hover: highlight the White piece under the cursor.
+   * Runs only outside XR.
+   */
+  private updateMouseHover(): void {
+    if ((this.world.renderer.xr as any)?.isPresenting === true) return;
+    if (this.mouseSelectedEntity) return; // a piece is already selected
+    // hover glow is handled by setHoverGlow below — nothing to do here
+    // (actual highlight updates happen in handleDesktopClick path)
+  }
+
+  /**
+   * Handle a desktop left-click:
+   *  - First click on a White piece → select it, show legal moves.
+   *  - Second click on a legal square → execute move.
+   *  - Click on empty board → deselect.
+   */
+  private handleDesktopClick(clientX: number, clientY: number, canvas: HTMLElement): void {
+    if (!this.gameStarted || this.gameOver || this.isAiThinking || this.isAiAnimating) return;
+    if (turnColor(this.chess) !== 'white') return;
+
+    const rect = canvas.getBoundingClientRect();
+    this._mouseCoords.set(
+      ((clientX - rect.left) / rect.width)  *  2 - 1,
+      -((clientY - rect.top)  / rect.height) *  2 + 1,
+    );
+
+    this._raycaster.setFromCamera(this._mouseCoords, this.world.camera);
+
+    // Collect all piece meshes + board tile meshes
+    const meshes: Mesh[] = [];
+    const meshToEntity = new Map<Mesh, Entity>();
+    for (const entity of this.queries.pieces.entities) {
+      if (entity.getValue(ChessPiece, 'isCaptured')) continue;
+      const obj = entity.object3D;
+      if (!obj) continue;
+      obj.traverse((c: Object3D) => {
+        if (c instanceof Mesh) {
+          meshes.push(c);
+          meshToEntity.set(c, entity);
+        }
+      });
+    }
+
+    // --- Board surface as invisible raycast target ---
+    const boardPlaneY = this._boardCenter.y + 0.042; // top of tiles
+    const ray = this._raycaster.ray;
+    // Intersect with board-plane (y = boardPlaneY)
+    let boardSq: string | null = null;
+    if (Math.abs(ray.direction.y) > 0.0001) {
+      const t = (boardPlaneY - ray.origin.y) / ray.direction.y;
+      if (t > 0) {
+        const hitPt = new Vector3(
+          ray.origin.x + ray.direction.x * t,
+          boardPlaneY,
+          ray.origin.z + ray.direction.z * t,
+        );
+        boardSq = worldPositionToSquare(hitPt);
+      }
+    }
+
+    const hits = this._raycaster.intersectObjects(meshes, false);
+    const hitEntity = hits.length > 0 ? meshToEntity.get(hits[0].object as Mesh) ?? null : null;
+
+    // — CASE 1: a piece is already selected — try to move —
+    if (this.mouseSelectedEntity) {
+      const fromSq = this.mouseSelectedEntity.getValue(ChessPiece, 'square') || '';
+
+      // Did the user click a legal target square?
+      const targetSq = boardSq;
+      if (targetSq && this.currentLegalSquares.includes(targetSq)) {
+        // Execute move
+        let moveResult: ReturnType<Chess['move']> | null = null;
+        try {
+          moveResult = this.chess.move({ from: fromSq, to: targetSq, promotion: 'q' });
+        } catch { moveResult = null; }
+
+        if (moveResult) {
+          this.moveCount++;
+          if (moveResult.captured) {
+            const capturedSq = moveResult.flags.includes('e')
+              ? targetSq[0] + fromSq[1] : targetSq;
+            this.relocateCapturedPiece(capturedSq, 'black');
+            chessAudio.playCapture();
+          } else {
+            chessAudio.playDrop();
+          }
+          this.handleCastlingRook(moveResult.flags, 'w');
+          this.snapToSquare(this.mouseSelectedEntity, targetSq);
+          this.mouseSelectedEntity.setValue(ChessPiece, 'square', targetSq);
+          this.mouseSelectedEntity.setValue(ChessPiece, 'originalSquare', targetSq);
+          if (moveResult.promotion) {
+            this.mouseSelectedEntity.setValue(ChessPiece, 'type', 'queen');
+          }
+          this.checkGameEnd();
+        } else {
+          chessAudio.playInvalid();
+        }
+
+        // Clear selection regardless
+        const prevMesh = this.mouseSelectedEntity.object3D;
+        if (prevMesh) setHoverGlow(prevMesh, false, 0);
+        this.mouseSelectedEntity = null;
+        this.clearIndicators();
+        this.currentLegalSquares = [];
+
+        if (!this.gameOver && turnColor(this.chess) === 'black') {
+          this.triggerAiMove();
+        } else {
+          this.refreshStatusUI();
+        }
+        return;
+      }
+
+      // Clicked a different White piece → switch selection
+      if (hitEntity && hitEntity.getValue(ChessPiece, 'color') === 'white') {
+        const prevMesh = this.mouseSelectedEntity.object3D;
+        if (prevMesh) setHoverGlow(prevMesh, false, 0);
+        this.mouseSelectedEntity = null;
+        this.clearIndicators();
+        this.currentLegalSquares = [];
+        // fall through to CASE 2
+      } else {
+        // Clicked empty / black piece → deselect
+        const prevMesh = this.mouseSelectedEntity.object3D;
+        if (prevMesh) setHoverGlow(prevMesh, false, 0);
+        this.mouseSelectedEntity = null;
+        this.clearIndicators();
+        this.currentLegalSquares = [];
+        this.refreshStatusUI();
+        return;
+      }
+    }
+
+    // — CASE 2: select a White piece —
+    if (hitEntity && hitEntity.getValue(ChessPiece, 'color') === 'white') {
+      const sq = hitEntity.getValue(ChessPiece, 'square') || '';
+      if (!sq) return;
+      this.mouseSelectedEntity = hitEntity;
+      const mesh = hitEntity.object3D;
+      if (mesh) setHoverGlow(mesh, true, HOVER_EMISSIVE_WHITE);
+
+      const moves = this.chess.moves({ square: sq as Square, verbose: true });
+      this.currentLegalSquares = moves.map((m) => m.to);
+      this.showIndicators(moves);
+      chessAudio.playPick();
+
+      if (this.hintEl) {
+        const pType = hitEntity.getValue(ChessPiece, 'type') || 'piece';
+        this.hintEl.setProperties({ text: `Click destination square for ${pType} on ${sq.toUpperCase()}` });
+      }
+    }
   }
 }
